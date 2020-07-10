@@ -5,6 +5,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -111,6 +112,7 @@ namespace Microsoft.SqlTools.Hosting.Protocol
             ShiftBufferBytesAndShrink(readOffset);
 
             // Get the JObject for the JSON content
+            Logger.Write(TraceEventType.Verbose, $"Received message content: " + (messageContent ?? "(null)"));
             JsonReader messageReader = new JsonTextReader(new StringReader(messageContent));
             messageReader.DateParseHandling = DateParseHandling.None;
             JObject messageObject = JObject.Load(messageReader);
@@ -134,12 +136,14 @@ namespace Microsoft.SqlTools.Hosting.Protocol
                     this.messageBuffer.Length * 2);
             }
 
+            Logger.Write(TraceEventType.Verbose, "Reading from stream");
             // Read the next chunk into the message buffer
             int readLength =
                 await this.inputStream.ReadAsync(
                     this.messageBuffer,
                     this.bufferEndOffset,
                     this.messageBuffer.Length - this.bufferEndOffset);
+            Logger.Write(TraceEventType.Verbose, $"Read {readLength} bytes");
 
             this.bufferEndOffset += readLength;
 
@@ -209,6 +213,8 @@ namespace Microsoft.SqlTools.Hosting.Protocol
                 {
                     throw new MessageParseException("", SR.HostingHeaderMissingContentLengthValue);
                 }
+
+                Logger.Write(TraceEventType.Verbose, $"Expecting Content-Length of {contentLengthString}");
             }
             catch (Exception)
             {

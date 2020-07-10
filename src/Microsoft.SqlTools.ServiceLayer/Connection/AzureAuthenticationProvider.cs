@@ -4,42 +4,27 @@
 //
 
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Data;
-using System.Data.Common;
-using Microsoft.Data.SqlClient;
-using Microsoft.Data.SqlClient.AlwaysEncrypted.AzureKeyVaultProvider;
-using System.Globalization;
-using System.Linq;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Data.SqlClient;
+using Microsoft.SqlTools.Hosting.Contracts;
 using Microsoft.SqlTools.Hosting.Protocol;
-using Microsoft.SqlServer.Management.Common;
 using Microsoft.SqlTools.ServiceLayer.Connection.Contracts;
-using Microsoft.SqlTools.ServiceLayer.Connection.ReliableConnection;
-using Microsoft.SqlTools.ServiceLayer.LanguageServices;
-using Microsoft.SqlTools.ServiceLayer.LanguageServices.Contracts;
-using Microsoft.SqlTools.ServiceLayer.Utility;
 using Microsoft.SqlTools.Utility;
-using System.Diagnostics;
 
 namespace Microsoft.SqlTools.ServiceLayer.Connection
 {
     public class AzureAuthenticationProvider : SqlAuthenticationProvider
     {
-        private static int count = 0;
-        private Task lastTask = null;
+        private static int count;
 
         public override async Task<SqlAuthenticationToken> AcquireTokenAsync(SqlAuthenticationParameters parameters)
         {
-            if (lastTask != null)
-            {
-                await lastTask;
-            }
-            count++;
+            Interlocked.Increment(ref count);
             Logger.Write(TraceEventType.Information, "Request in!" + count);
-            RequestSecurityTokenParams message = new RequestSecurityTokenParams()
+
+            var message = new RequestSecurityTokenParams
             {
                 Authority = parameters.Authority,
                 Provider = "Azure",
@@ -47,38 +32,13 @@ namespace Microsoft.SqlTools.ServiceLayer.Connection
                 ServerName = parameters.ServerName,
                 DatabaseName = parameters.DatabaseName,
                 ConnectionId = parameters.ConnectionId.ToString(),
-                Scope = count.ToString()
+                CorrelationId = count,
             };
 
-            TimeSpan timeout = TimeSpan.FromSeconds(10);
+            var response = await ConnectionService.Instance.ServiceHost.SendRequest(SecurityTokenRequest.Type, message, true);
+            var expiresOn = DateTimeOffset.FromUnixTimeSeconds(response.Expiration);
 
-            try
-            {
-                var task = ConnectionService.Instance.ServiceHost.SendRequest(SecurityTokenRequest.Type, message, true);
-                using (var timeoutCancellationTokenSource = new CancellationTokenSource())
-                {
-                    lastTask =
-                        await Task.WhenAny(task, Task.Delay(timeout, timeoutCancellationTokenSource.Token));
-                    if (lastTask == task)
-                    {
-                        timeoutCancellationTokenSource.Cancel();
-                        RequestSecurityTokenResponse response = await task;
-                        var expiresOn = DateTimeOffset.FromUnixTimeSeconds(response.Expiration);
-                        return new SqlAuthenticationToken(response.Token, expiresOn);
-                    }
-
-                    throw new TimeoutException("Azure token request timed out");
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.WriteWithCallstack(TraceEventType.Error, ex.Message);
-                return null;
-            }
-            finally
-            {
-                lastTask = null;
-            }
+            return new SqlAuthenticationToken(response.Token, expiresOn);
         }
 
         public override bool IsSupported(SqlAuthenticationMethod authenticationMethod)

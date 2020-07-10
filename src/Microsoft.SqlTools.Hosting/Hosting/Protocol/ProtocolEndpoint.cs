@@ -120,8 +120,13 @@ namespace Microsoft.SqlTools.Hosting.Protocol
 
         public void WaitForExit()
         {
-            this.endpointExitedTask = new TaskCompletionSource<bool>();
-            this.endpointExitedTask.Task.Wait();
+            this.WaitForExitAsync().Wait();
+        }
+
+        public Task WaitForExitAsync()
+        {
+            this.endpointExitedTask ??= new TaskCompletionSource<bool>();
+            return this.endpointExitedTask.Task;
         }
 
         public async Task Stop()
@@ -135,7 +140,7 @@ namespace Microsoft.SqlTools.Hosting.Protocol
                 await this.OnStop();
 
                 // Stop the dispatcher and channel
-                this.MessageDispatcher.Stop();
+                await this.MessageDispatcher.StopAsync();
                 this.protocolChannel.Stop();
 
                 // Notify anyone waiting for exit
@@ -224,32 +229,9 @@ namespace Microsoft.SqlTools.Hosting.Protocol
                     throw new InvalidOperationException("SendEvent called when ProtocolChannel was not yet connected");
                 }
 
-                // Some events could be raised from a different thread.
-                // To ensure that messages are written serially, dispatch
-                // dispatch the SendEvent call to the message loop thread.
-
-                if (!this.MessageDispatcher.InMessageLoopThread)
-                {
-                    TaskCompletionSource<bool> writeTask = new TaskCompletionSource<bool>();
-
-                    this.MessageDispatcher.SynchronizationContext.Post(
-                        async (obj) =>
-                        {
-                            await this.protocolChannel.MessageWriter.WriteEvent(
-                                eventType,
-                                eventParams);
-
-                            writeTask.SetResult(true);
-                        }, null);
-
-                    return writeTask.Task;
-                }
-                else
-                {
-                    return this.protocolChannel.MessageWriter.WriteEvent(
-                        eventType,
-                        eventParams);
-                }
+                return this.protocolChannel.MessageWriter.WriteEvent(
+                    eventType,
+                    eventParams);
             }
             catch (Exception ex)
             {

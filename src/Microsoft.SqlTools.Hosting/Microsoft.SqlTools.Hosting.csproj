@@ -10,6 +10,7 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<PreserveCompilationContext>true</PreserveCompilationContext>
 		<DebugType>portable</DebugType>
+		<LangVersion>latest</LangVersion>
 	</PropertyGroup>
 	<ItemGroup>
 		<Compile Include="**\*.cs" Exclude="**/obj/**/*.cs" />

@@ -80,7 +80,7 @@ namespace Microsoft.SqlTools.ServiceLayer.UnitTests.Messaging
                 bool handlerCalled = false;
                 var dispatcher = new MessageDispatcher(new Mock<ChannelBase>().Object);
                 dispatcher.UnhandledException += (s, e) => handlerCalled = true;       
-                dispatcher.OnListenTaskCompleted(t);
+                // dispatcher.OnListenTaskCompleted(t);
                 Assert.True(handlerCalled);   
             }
         }

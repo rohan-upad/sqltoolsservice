@@ -3,6 +3,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 //
 
+using System;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -22,7 +23,6 @@ namespace Microsoft.SqlTools.Hosting.Protocol
 
         private Stream outputStream;
         private IMessageSerializer messageSerializer;
-        private AsyncLock writeLock = new AsyncLock();
 
         private JsonSerializer contentSerializer = 
             JsonSerializer.Create(
@@ -69,22 +69,14 @@ namespace Microsoft.SqlTools.Hosting.Protocol
                     Constants.JsonSerializerSettings);
 
             byte[] messageBytes = Encoding.UTF8.GetBytes(serializedMessage);
-            byte[] headerBytes = 
-                Encoding.ASCII.GetBytes(
-                    string.Format(
-                        Constants.ContentLengthFormatString,
-                        messageBytes.Length));
+            byte[] headerBytes = Encoding.ASCII.GetBytes(string.Format(Constants.ContentLengthFormatString, messageBytes.Length));
 
-            // Make sure only one call is writing at a time.  You might be thinking
-            // "Why not use a normal lock?"  We use an AsyncLock here so that the
-            // message loop doesn't get blocked while waiting for I/O to complete.
-            using (await this.writeLock.LockAsync())
-            {
-                // Send the message
-                await this.outputStream.WriteAsync(headerBytes, 0, headerBytes.Length);
-                await this.outputStream.WriteAsync(messageBytes, 0, messageBytes.Length);
-                await this.outputStream.FlushAsync();
-            }
+            var buffer = new byte[messageBytes.Length + headerBytes.Length];
+            Array.Copy(headerBytes, buffer, headerBytes.Length);
+            Array.Copy(messageBytes, 0, buffer, headerBytes.Length, messageBytes.Length);
+
+            await this.outputStream.WriteAsync(buffer, 0, buffer.Length);
+            await this.outputStream.FlushAsync();
         }
 
         public async Task WriteRequest<TParams, TResult>(

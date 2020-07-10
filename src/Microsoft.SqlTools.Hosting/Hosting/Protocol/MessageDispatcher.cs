@@ -22,8 +22,6 @@ namespace Microsoft.SqlTools.Hosting.Protocol
 
         private ChannelBase protocolChannel;
 
-        private AsyncContextThread messageLoopThread;
-
         internal Dictionary<string, Func<Message, MessageWriter, Task>> requestHandlers =
             new Dictionary<string, Func<Message, MessageWriter, Task>>();
 
@@ -35,22 +33,11 @@ namespace Microsoft.SqlTools.Hosting.Protocol
         private CancellationTokenSource messageLoopCancellationToken =
             new CancellationTokenSource();
 
+        private Task messageLoopTask = null;
+
         #endregion
 
         #region Properties
-
-        public SynchronizationContext SynchronizationContext { get; private set; }
-
-        public bool InMessageLoopThread
-        {
-            get
-            {
-                // We're in the same thread as the message loop if the
-                // current synchronization context equals the one we
-                // know.
-                return SynchronizationContext.Current == this.SynchronizationContext;
-            }
-        }
 
         protected MessageReader MessageReader { get; private set; }
 
@@ -74,23 +61,23 @@ namespace Microsoft.SqlTools.Hosting.Protocol
 
         public void Start()
         {
-            // Start the main message loop thread.  The Task is
-            // not explicitly awaited because it is running on
-            // an independent background thread.
-            this.messageLoopThread = new AsyncContextThread("Message Dispatcher");
-            this.messageLoopThread
-                .Run(() => this.ListenForMessages(this.messageLoopCancellationToken.Token))
-                .ContinueWith(this.OnListenTaskCompleted);
+            messageLoopTask = Task.Run(async () =>
+            {
+                try
+                {
+                    await this.ListenForMessages(this.messageLoopCancellationToken.Token);
+                }
+                catch (Exception ex)
+                {
+                    this.OnUnhandledException(ex);
+                }
+            });
         }
 
-        public void Stop()
+        public async Task StopAsync()
         {
-            // Stop the message loop thread
-            if (this.messageLoopThread != null)
-            {
-                this.messageLoopCancellationToken.Cancel();
-                this.messageLoopThread.Stop();
-            }
+            this.messageLoopCancellationToken.Cancel();
+            await this.messageLoopTask;
         }
 
         public void SetRequestHandler<TParams, TResult>(
@@ -203,8 +190,6 @@ namespace Microsoft.SqlTools.Hosting.Protocol
 
         private async Task ListenForMessages(CancellationToken cancellationToken)
         {
-            this.SynchronizationContext = SynchronizationContext.Current;
-
             // Run the message loop
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -316,18 +301,6 @@ namespace Microsoft.SqlTools.Hosting.Protocol
                         Logger.Write(TraceEventType.Error, string.Format("An unexpected error occured in the request handler: {0}", e.ToString()));
                     }
                 }
-            }
-        }
-
-        internal void OnListenTaskCompleted(Task listenTask)
-        {
-            if (listenTask.IsFaulted)
-            {
-                this.OnUnhandledException(listenTask.Exception);
-            }
-            else if (listenTask.IsCompleted || listenTask.IsCanceled)
-            {
-                // TODO: Dispose of anything?
             }
         }
 

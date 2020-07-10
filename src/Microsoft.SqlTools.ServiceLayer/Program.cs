@@ -8,6 +8,7 @@ using Microsoft.SqlTools.ServiceLayer.Utility;
 using Microsoft.SqlTools.Utility;
 using System.IO;
 using System.Diagnostics;
+using System.Threading.Tasks;
 
 namespace Microsoft.SqlTools.ServiceLayer
 {
@@ -19,7 +20,7 @@ namespace Microsoft.SqlTools.ServiceLayer
         /// <summary>
         /// Main entry point into the SQL Tools API Service Layer
         /// </summary>
-        internal static void Main(string[] args)
+        internal static async Task Main(string[] args)
         {
             try
             {
@@ -46,7 +47,7 @@ namespace Microsoft.SqlTools.ServiceLayer
                 SqlToolsContext sqlToolsContext = new SqlToolsContext(hostDetails);
                 ServiceHost serviceHost = HostLoader.CreateAndStartServiceHost(sqlToolsContext);
 
-                serviceHost.WaitForExit();
+                await serviceHost.WaitForExitAsync();
             }
             catch (Exception ex)
             {
